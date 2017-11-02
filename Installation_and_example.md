@@ -141,14 +141,15 @@ istio-pilot-2278433625-68l34     1/1       Running   0          2m
 kubectl apply -f <(istioctl kube-inject -f /home/ubuntu/istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml)
 ```
 
-我们知道kubectl apply 命令是用于部署服务的，但该命令行的参数不是一个kubernetes yaml文件，而是该命令行`(istioctl kube-inject -f /home/ubuntu/istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml)`的输出。
-该命令行在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令在这里的用途。
+我们知道kubectl apply命令在这里是用于部署kubernetes服务的，但在这里该命令行的参数不是一个kubernetes yaml文件，而是`(istioctl kube-inject -f /home/ubuntu/istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml)`命令的输出。
+该命令在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令在这里的用途。
 
 ```
 istioctl kube-inject -f /home/ubuntu/istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> bookinfo_with_sidecar.yaml
 ```
 
-打开bookinfo\_with\_sidecar.yaml文件，可以看到该命令为每一个服务都注入一个istio-proxy代理。Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中，通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar一起部署，实现了Istio代理部署对应用部署透明性。
+打开bookinfo\_with\_sidecar.yaml文件，可以看到该命令为每一个服务都注入一个istio-proxy代理。
+Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中，通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar一起部署，实现了Istio代理部署对应用部署透明性。
 
 ```
       image: docker.io/istio/proxy_debug:0.2.10
@@ -185,10 +186,12 @@ reviews       10.43.219.248   <none>        9080/TCP   6m
 在浏览器中打开应用程序页面，地址为istio-ingress的External IP
 
 `http://10.12.25.116/productpage`
+![](images/Bookinfo.PNG)
 
 # 测试路由规则
 
-多次刷新productpage页面，你会发现该页面中显示的Book Reviews有时候有带红星的评价信息，有时有带黑星的评价信息，有时只有文字评价信息。这是因为Bookinfo应用程序部署了3个版本的Reviews服务，每个版本的返回结果不同，在没有设置路由规则时，缺省的路由会将请求随机路由到每个版本的服务上，如下图所示：
+多次刷新Bookinfo应用的productpage页面，我们会发现该页面中显示的Book Reviews有时候有带红星的评价信息，有时有带黑星的评价信息，有时只有文字评价信息。
+这是因为Bookinfo应用程序部署了3个版本的Reviews服务，每个版本的返回结果不同，在没有设置路由规则时，缺省的路由会将请求随机路由到每个版本的服务上，如下图所示：
 
 ![](/images/withistio.svg)
 
@@ -211,8 +214,17 @@ spec:
 启用该路由规则
 
 ```
- istioctl create -f route_rule.yaml -n default
+istioctl create -f route_rule.yaml -n default
 ```
 
 再次打开productpage页面, 无论刷新多少次，显示的页面将始终是v1版本的输出，即不带星的评价内容。
+![](images/Bookinfo-no-star.PNG)
+删除该路由规则
+
+```
+istioctl delete -f route_rule.yaml -n default
+```
+
+继续刷新productpage页面,将重新随机出现三个版本的评价内容页面。
+
 
