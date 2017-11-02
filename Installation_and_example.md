@@ -1,12 +1,40 @@
+# 服务网格简介
+
+**服务网格**（Service Mesh）是为解决微服务的通信和治理而出现的一种**架构模式**。
+
+通过将服务间通讯以及于此相关的管理控制功能从业务程序中下移到基础设施，应用开发者只需要关注并实现应用业务逻辑。服务间通信的关注点，包括服务发现，通讯的可靠性，通讯的安全性，服务路由等由服务网格层进行处理，并对应用程序透明。
+
+在出现服务网格之前，一般是在微服务应用程序进程内处理服务通讯逻辑，包括服务发现，熔断，重试，超时等逻辑，如下图所示：  
+![](images/5-a.png)  
+通过对这部分负责服务通讯的逻辑进行抽象和归纳，可以形成一个代码库供应用程序调用。但应用程序还是需要处理和各种语言代码库的调用细节，并且各种代码库互不兼容，导致对应用程序使用的语言和代码框架有较大限制。
+
+可以将这部分逻辑从应用程序进程中抽取出来，作为一个单独的进程进行部署，并将其作为服务间的通信代理，如下图所示：  
+![](images/6-a.png)  
+因为通讯代理进程和应用进程一起部署，类似于三轮摩托车的“挎斗”（sidecar），因此形象地把这种部署方式称为“挎斗”（sidecar）。  
+应用间的所有流量都需要经过代理，由于代理以sidecar方式和应用部署在同一台主机上，应用和代理之间的通讯被认为是可靠的。然后由代理来负责找到目的服务并负责通讯的可靠性和安全等问题。
+
+当服务大量部署时，随着服务部署的sidecar代理之间的连接形成了一个如下图所示的网格，被称之为Service Mesh（服务网格），从而得出如下的服务网格定义。
+
+_服务网格是一个基础设施层，用于处理服务间通信。云原生应用有着复杂的服务拓扑，服务网格保证请求可以在这些拓扑中可靠地穿梭。在实际应用当中，服务网格通常是由一系列轻量级的网络代理组成的，它们与应用程序部署在一起，但应用程序不需要知道它们的存在。_
+
+_William Morgan _[_WHAT’S A SERVICE MESH? AND WHY DO I NEED ONE?_](https://buoyant.io/2017/04/25/whats-a-service-mesh-and-why-do-i-need-one/)_                                               _
+
+![](images/mesh1.png)
+
+[Istio](https://istio.io/)是来自Google，IBM和Lyft的一个Service Mesh（服务网格）开源项目，是Google继Kubernetes之后的又一大作，Istio架构先进，设计合理，刚一宣布就获得了Linkerd，nginmesh等其他Service Mesh项目的合作以及Red hat/Pivotal/Weaveworks/Tigera/Datawire等的积极响应。  
+![](images/Istio Architecture.PNG)  
+可以设想，在不久的将来，微服务的标准基础设施将是采用kubernetes进行服务部署和集群管理，采用Istio处理服务通讯和治理，两者相辅相成，缺一不可。
+
 # 安装Kubernetes
 
-本文主要介绍Istio的安装，Istio是微服务通讯和治理的基础设施层，需要和微服务部署和集群管理的基础设施层共同工作。
+Istio是微服务通讯和治理的基础设施层，需要和微服务部署和集群管理的基础设施层共同工作。
 
-Istio架构比较灵活，在设计上支持各种服务部署平台，包括kubernetes，cloud foundry，Mesos等，但作为Google亲儿子，对自家兄弟Kubernetes的支持肯定是首先考虑的。目前版本的0.2版本的手册中也只有Kubernetes集成的安装说明，其它部署平台和Istio的集成将在后续版本中支持。
+Istio架构非常开放，在设计上支持各种服务部署平台，包括kubernetes，cloud foundry，Mesos等，但Istio作为Google亲儿子，对自家兄弟Kubernetes的支持肯定是首先考虑的。目前版本的0.2版本的手册中也只有Kubernetes集成的安装说明，其它部署平台和Istio的集成将在后续版本中支持。  
+从Istio控制面Pilot的架构图可以看到各种部署平台可以通过插件方式集成到Istio中，为Istio提供服务注册和发现功能。
 
-![](/images/PilotAdapters.svg)![](images/PilotAdapters.svg)
+![](/images/PilotAdapters.PNG)
 
-不对Kubernetes安装过程进行描述。kubernetes集群的部署较为复杂，建议通过[Rancher](http://rancher.com)安装，可以大大简化kubernetes集群的安装部署过程。
+kubernetes集群的部署较为复杂，[Rancher](http://rancher.com)提供了kubernetes部署模板，通过一键式安装，可以大大简化kubernetes集群的安装部署过程。
 
 本文的测试环境为两台虚机组成的集群，操作系统是Ubuntu 16.04.3 LTS。
 
@@ -29,15 +57,17 @@ sudo docker run -d --restart=always -p 8080:8080 rancher/server
 
 ## 登录Rancher管理界面，创建k8s集群
 
-Rancher 管理界面的缺省端口为8080，在浏览器中打开该界面，通过菜单Default-&gt;Manage Environment-&gt;Add Environment添加一个kubernetes集群。这里需要输入名称Kubernetes，描述，然后选择kubernetes template，点击create，创建Kubernetes环境。
+Rancher 管理界面的缺省端口为8080，在浏览器中打开该界面，通过菜单Default-&gt;Manage Environment-&gt;Add Environment添加一个kubernetes集群。这里需要输入名称kubernetes，描述，然后选择kubernetes template，点击create，创建Kubernetes环境。![](images/Rancher.PNG)
 
-点击菜单Default-&gt;Kubernetes，然后点击右上方的Add a host，添加一台host到kubernetes集群中。注意添加到集群中的host上必须先安装好符合要求的docker版本。
+点击菜单切换到kubernetes Environment，然后点击右上方的Add a host，添加一台host到kubernetes集群中。注意添加到集群中的host上必须先安装好符合要求的docker版本。
 
-然后根据Rancher页面上的提示在host上执行脚本，以将host加入ranch cluster。
+然后根据Rancher页面上的提示在host上执行脚本启动Rancher agent，以将host加入ranch cluster。注意脚本中包含了rancher server的地址，在host上必须可以ping通该地址。![](images/Rancher-add-host.PNG)
 
-host加入cluster后Rancher会在host上pull kubernetes的images并启动kubernetes相关服务，因此需要等待一段时间。根据网络情况不同等待时间可能不同，我等待了30分钟左右。
+host加入cluster后Rancher会在host上pull kubernetes的images并启动kubernetes相关服务，根据安装环境所在网络情况不同需要等待几分钟到几十分钟不等。
 
 ## 安装并配置kubectl
+
+待Rancher界面提示kubernetes创建成功后，安装kubernetes命令行工具kubectl
 
 ```
 curl -LO https://storage.googleapis.com/kubernetes-release/release/v1.7.4/bin/linux/amd64/kubectl
@@ -47,7 +77,7 @@ chmod +x ./kubectl
 sudo mv ./kubectl /usr/local/bin/kubectl
 ```
 
-登录Rancher管理界面, 将 default-&gt;onap kubernetes-&gt;CLI create config 的内容拷贝到~/.kube/config 中，以配置Kubectl和kubernetes server的连接信息。
+登录Rancher管理界面, 将 All Environments-&gt;kubernetes-&gt;KUBERNETES-&gt;CLI create config 的内容拷贝到~/.kube/config 中，以配置Kubectl和kubernetes server的连接信息。![](images/Rancher-kubectl.PNG)
 
 # 安装Istio
 
@@ -99,6 +129,7 @@ istio-ingress-2270755287-phwvq   1/1       Running   0          2m
 istio-mixer-1505455116-9hmcw     2/2       Running   0          2m
 istio-pilot-2278433625-68l34     1/1       Running   0          2m
 ```
+从上面的输出可以看到，这里部署的主要是Istio控制面的服务，数据面的网络代理如何部署呢？根据前面服务网格的架构可以得知，网络代理是随着应用程序以sidecar的方式部署的，在下面部署Bookinfo示例程序时会演示如何部署网络代理。
 
 # 部署Bookinfo示例程序
 
@@ -110,15 +141,14 @@ istio-pilot-2278433625-68l34     1/1       Running   0          2m
 kubectl apply -f <(istioctl kube-inject -f /home/ubuntu/istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml)
 ```
 
-我们知道kubectl apply 命令用于部署服务，该命令行在部署Bookinfo应用时采用了istio的kube-inject工具将sidecar注入了Bookinfo的kubernetes yaml部署文件中。
-
-通过下面的命令将注入了sidecar的yaml文件内容保存到文件中，可以查看kube-inject命令对yaml文件的修改内容
+我们知道kubectl apply 命令是用于部署服务的，但该命令行的参数不是一个kubernetes yaml文件，而是该命令行`(istioctl kube-inject -f /home/ubuntu/istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml)`的输出。
+该命令行在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令在这里的用途。
 
 ```
 istioctl kube-inject -f /home/ubuntu/istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> bookinfo_with_sidecar.yaml
 ```
 
-打开bookinfo\_with\_sidecar.yaml文件，可以看到该命令为每一个服务都注入一个istio-proxy代理
+打开bookinfo\_with\_sidecar.yaml文件，可以看到该命令为每一个服务都注入一个istio-proxy代理。Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中，通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar一起部署，实现了Istio代理部署对应用部署透明性。
 
 ```
       image: docker.io/istio/proxy_debug:0.2.10
@@ -156,7 +186,7 @@ reviews       10.43.219.248   <none>        9080/TCP   6m
 
 `http://10.12.25.116/productpage`
 
-# 创建路由规则
+# 测试路由规则
 
 多次刷新productpage页面，你会发现该页面中显示的Book Reviews有时候有带红星的评价信息，有时有带黑星的评价信息，有时只有文字评价信息。这是因为Bookinfo应用程序部署了3个版本的Reviews服务，每个版本的返回结果不同，在没有设置路由规则时，缺省的路由会将请求随机路由到每个版本的服务上，如下图所示：
 
