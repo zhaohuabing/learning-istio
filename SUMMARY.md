@@ -1,6 +1,5 @@
 # Summary
 
-* [Introduction](README.md)
-* [First Chapter](chapter1.md)
-* [test](test.md)
+* [Istio安装与Bookinfo应用部署](Installation_and_example.md)
+
 
