@@ -169,17 +169,17 @@ reviews       10.43.219.248   <none>        9080/TCP   6m
 
 # 理解Istio Proxy实现原理
 
-服务网格相对于sprint cloud等代码库的一大优势是其对应用程序无侵入，在不修改应用程序代码的前提下对应用服务之间的通信进行接管，Istio是如何做到这点的呢？下面通过示例程序的部署剖析其中的原理。
+服务网格相对于sprint cloud等微服务代码库的一大优势是其对应用程序无侵入，在不修改应用程序代码的前提下对应用服务之间的通信进行接管，Istio是如何做到这点的呢？下面通过示例程序的部署剖析其中的原理。
 
-如果熟悉kubernetes的应用部署过程，我们知道Bookinfo应用程序应该这样部署
+如果熟悉kubernetes的应用部署过程，我们知道Bookinfo应用程序的标准部署方式是这样的：
 
 ```
 kubectl apply -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml
 ```
 
-但从上面的部署过程可以看到，kubectl apply命令的输入不是一个kubernetes yaml文件，而是`istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml`命令的输出。
+但从上面的部署过程可以看到，kubectl apply命令的输入并不是一个kubernetes yaml文件，而是`istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml`命令的输出。
 
-这段命令在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令到底在背后做了什么事情。
+这段命令在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令到底在背后搞了什么小动作。
 
 ```
 istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> bookinfo_with_sidecar.yaml
@@ -188,10 +188,11 @@ istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> book
 对比bookinfo\_with\_sidecar.yaml文件和bookinfo.yaml，可以看到该命令在bookinfo.yaml的基础上做了如下改动：
 
 * 为每个pod增加了一个代理container，该container用于处理应用container之间的通信，包括服务发现，路由规则处理等。从下面的配置文件中可以看到proxy container通过15001端口进行监听，接收应用container的流量。
+
 * 为每个pod增加了一个init-container，该container用于配置iptable，将应用container的流量导入到代理container中。
 
 ```
-  //注入istio 网络代理
+  #注入istio 网络代理
   image: docker.io/istio/proxy_debug:0.2.10
         imagePullPolicy: IfNotPresent
         name: istio-proxy
@@ -218,9 +219,9 @@ istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> book
         name: istio-init
 ```
 
-从上面的分析，我们可以看出Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中。通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar一起部署。
+从上面的分析，我们可以看出Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中。通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar和应用一起部署。
 
-我们可以通过命令查看pod中部署的docker container，确认是否部署了Istio代理
+通过命令查看pod中部署的docker container，确认是否部署了Istio代理
 
 ```
 kubectl get pods
@@ -234,7 +235,7 @@ reviews-v2-1193607610-cfhb5       2/2       Running   0          1d
 reviews-v3-3340858212-b5c8k       2/2       Running   0          1d
 ```
 
-查看reviews pod的中的container，可以看到除reviews container外还部署了一个istio-proxy container
+查看reviews pod的中的container，可以看到pod中除reviews container外还部署了一个istio-proxy container
 
 ```
 kubectl get pod reviews-v3-3340858212-b5c8k -o jsonpath='{.spec.containers[*].name}'
@@ -242,7 +243,7 @@ kubectl get pod reviews-v3-3340858212-b5c8k -o jsonpath='{.spec.containers[*].na
 reviews istio-proxy
 ```
 
-而应用container的流量是如何被导入到istio-proxy中的呢？ 
+而应用container的流量是如何被导入到istio-proxy中的呢？
 
 原理是Istio proxy在端口15001进行监听，pod中应用container的流量通过iptables规则被重定向到15001端口中。下面我们进入pod内部，通过相关命令来验证这一点。
 
