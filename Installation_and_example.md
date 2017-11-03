@@ -30,7 +30,7 @@ _William Morgan _[_WHAT’S A SERVICE MESH? AND WHY DO I NEED ONE?_](https://buo
 
 Istio是微服务通讯和治理的基础设施层，本身并不负责服务的部署和集群管理，因此需要和Kubernetes等服务编排工具协同工作。
 
-Istio架构非常开放，在设计上支持各种服务部署平台，包括kubernetes，cloud foundry，Mesos等，但Istio作为Google亲儿子，对自家兄弟Kubernetes的支持肯定是首先考虑的。目前版本的0.2版本的手册中也只有Kubernetes集成的安装说明，其它部署平台和Istio的集成将在后续版本中支持。  
+Istio在架构设计上支持各种服务部署平台，包括kubernetes，cloud foundry，Mesos等，但Istio作为Google亲儿子，对自家兄弟Kubernetes的支持肯定是首先考虑的。目前版本的0.2版本的手册中也只有Kubernetes集成的安装说明，其它部署平台和Istio的集成将在后续版本中支持。  
 
 从Istio控制面Pilot的架构图可以看到各种部署平台可以通过插件方式集成到Istio中，为Istio提供服务注册和发现功能。
 
@@ -147,33 +147,6 @@ istio-pilot-2278433625-68l34     1/1       Running   0          2m
 kubectl apply -f <(istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml)
 ```
 
-我们知道kubectl apply命令在这里是用于部署kubernetes服务的，但在这里该命令行的参数不是一个kubernetes yaml文件，而是`istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml`命令的输出。  
-该命令在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令在这里的用途。
-
-```
-istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> bookinfo_with_sidecar.yaml
-```
-
-打开bookinfo\_with\_sidecar.yaml文件，可以看到该命令为每一个服务都注入一个istio-proxy代理。  
-Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中，通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar一起部署，实现了Istio代理部署对应用部署透明性。
-
-```
-      image: docker.io/istio/proxy_debug:0.2.10
-        imagePullPolicy: IfNotPresent
-        name: istio-proxy
-        resources: {}
-        securityContext:
-          privileged: true
-          readOnlyRootFilesystem: false
-          runAsUser: 1337
-        volumeMounts:
-        - mountPath: /etc/istio/proxy
-          name: istio-envoy
-        - mountPath: /etc/certs/
-          name: istio-certs
-          readOnly: true
-```
-
 确认Bookinfo服务已经启动
 
 ```
@@ -193,6 +166,89 @@ reviews       10.43.219.248   <none>        9080/TCP   6m
 
 `http://10.12.25.116/productpage`  
 ![](images/Bookinfo.PNG)
+
+# 理解Istio Proxy原理
+从上面的部署过程可以看到，部署Bookinfo应用程序的命令和标准部署命令的唯一差别就是kubectl apply命令的输入不是一个kubernetes yaml文件，而是`istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml`命令的输出。
+
+这段命令在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令到底做了什么事情。
+
+```
+istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> bookinfo_with_sidecar.yaml
+```
+
+对比bookinfo\_with\_sidecar.yaml文件和bookinfo.yaml，可以看到该命令在bookinfo.yaml的基础上主要增加了下述修改：
+* 为每个pod增加了一个代理container，该container用于处理应用container之间的通信，包括服务发现，路由规则处理等。
+* 为每个pod增加了一个init-container，该container用于配置iptable，将应用container的流量导入到代理container中。
+
+```
+  //注入istio 网络代理
+  image: docker.io/istio/proxy_debug:0.2.10
+        imagePullPolicy: IfNotPresent
+        name: istio-proxy
+        resources: {}
+        securityContext:
+          privileged: true
+          readOnlyRootFilesystem: false
+          runAsUser: 1337
+        volumeMounts:
+        - mountPath: /etc/istio/proxy
+          name: istio-envoy
+        - mountPath: /etc/certs/
+          name: istio-certs
+          readOnly: true
+      #使用init container修改iptable
+      initContainers:
+      - args:
+        - -p
+        - "15001"
+        - -u
+        - "1337"
+        image: docker.io/istio/proxy_init:0.2.10
+        imagePullPolicy: IfNotPresent
+        name: istio-init
+```
+
+Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中，通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar一起部署，实现了Istio代理部署对应用部署透明性。
+
+我们可以通过命令查看pod中部署的docker container，确认是否部署了Istio代理
+
+```
+kubectl get pods
+
+NAME                              READY     STATUS    RESTARTS   AGE
+details-v1-3688945616-8hv8x       2/2       Running   0          1d
+productpage-v1-2055622944-cslw1   2/2       Running   0          1d
+ratings-v1-233971408-8dcnp        2/2       Running   0          1d
+reviews-v1-1360980140-474x6       2/2       Running   0          1d
+reviews-v2-1193607610-cfhb5       2/2       Running   0          1d
+reviews-v3-3340858212-b5c8k       2/2       Running   0          1d
+```
+查看reviews pod的中的container，可以看到除reviews container外还部署了一个istio-proxy container
+```
+
+kubectl get pod reviews-v3-3340858212-b5c8k -o jsonpath='{.spec.containers[*].name}'
+
+reviews istio-proxy
+```
+istio-proxy打开了端口15001，pod中应用的流量通过iptables规则被重定向到15001端口中。
+
+我们首先通过命令行找到ratings-v1-233971408-8dcnp pod的PID，以用于查看其network namespace內的iptables规则。
+
+```
+CONTAINER_ID=$(kubectl get po ratings-v1-233971408-8dcnp -o jsonpath='{.status.containerStatuses[0].containerID}' | cut -c 10-21)
+
+PID=$(sudo docker inspect --format '{{ .State.Pid }}' $CONTAINER_ID)
+
+```
+
+可以使用nsenter命令来进入pod的network namespace执行命令。
+使用
+
+```
+sudo nsenter -t ${PID} -n netstat -all | grep 15001
+
+tcp        0      0 *:15001                 *:*                     LISTEN
+```
 
 # 测试路由规则
 
