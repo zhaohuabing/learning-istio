@@ -167,8 +167,10 @@ reviews       10.43.219.248   <none>        9080/TCP   6m
 `http://10.12.25.116/productpage`  
 ![](images/Bookinfo.PNG)
 
-# 理解Istio Proxy原理
-从上面的部署过程可以看到，部署Bookinfo应用程序的命令和标准部署命令的唯一差别就是kubectl apply命令的输入不是一个kubernetes yaml文件，而是`istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml`命令的输出。
+# 理解Istio Proxy实现原理
+服务网格相对于sprint cloud等代码库的一大优势是其对应用程序无侵入，可以做到不修改应用程序代码的前提下对应用服务之间的通信进行接管，Istio是如何做到这点的呢？下面通过示例程序的部署剖析其中的原理。
+
+如果熟悉kubernetes的应用部署过程，我们知道kubernetes的标准部署方式是上面的部署过程可以看到，部署Bookinfo应用程序的命令和标准部署命令的唯一差别就是kubectl apply命令的输入不是一个kubernetes yaml文件，而是`istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml`命令的输出。
 
 这段命令在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令到底做了什么事情。
 
@@ -177,7 +179,7 @@ istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> book
 ```
 
 对比bookinfo\_with\_sidecar.yaml文件和bookinfo.yaml，可以看到该命令在bookinfo.yaml的基础上主要增加了下述修改：
-* 为每个pod增加了一个代理container，该container用于处理应用container之间的通信，包括服务发现，路由规则处理等。
+* 为每个pod增加了一个代理container，该container用于处理应用container之间的通信，包括服务发现，路由规则处理等。从下面的配置文件中可以看到proxy container通过15001端口进行监听，接收应用container的流量。
 * 为每个pod增加了一个init-container，该container用于配置iptable，将应用container的流量导入到代理container中。
 
 ```
@@ -242,13 +244,48 @@ PID=$(sudo docker inspect --format '{{ .State.Pid }}' $CONTAINER_ID)
 ```
 
 可以使用nsenter命令来进入pod的network namespace执行命令。
-使用
+使用netstat命令可以看到istio proxy代理的监听端口15001
 
 ```
 sudo nsenter -t ${PID} -n netstat -all | grep 15001
 
 tcp        0      0 *:15001                 *:*                     LISTEN
 ```
+
+使用iptables命令可以查看到下面的规则
+```
+sudo nsenter -t ${PID} -n iptables -t nat -L -n -v
+
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+   16   960 ISTIO_REDIRECT  all  --  *      *       0.0.0.0/0            0.0.0.0/0            /* istio/install-istio-prerouting */
+
+Chain INPUT (policy ACCEPT 16 packets, 960 bytes)
+ pkts bytes target     prot opt in     out     source               destination
+
+Chain OUTPUT (policy ACCEPT 84838 packets, 7963K bytes)
+ pkts bytes target     prot opt in     out     source               destination
+ 1969  118K ISTIO_OUTPUT  tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            /* istio/install-istio-output */
+
+Chain POSTROUTING (policy ACCEPT 84838 packets, 7963K bytes)
+ pkts bytes target     prot opt in     out     source               destination
+
+Chain ISTIO_OUTPUT (1 references)
+ pkts bytes target     prot opt in     out     source               destination
+    0     0 ISTIO_REDIRECT  all  --  *      lo      0.0.0.0/0           !127.0.0.1            /* istio/redirect-implicit-loopback */
+ 1969  118K RETURN     all  --  *      *       0.0.0.0/0            0.0.0.0/0            owner UID match 1337 /* istio/bypass-envoy */
+    0     0 RETURN     all  --  *      *       0.0.0.0/0            127.0.0.1            /* istio/bypass-explicit-loopback */
+    0     0 ISTIO_REDIRECT  all  --  *      *       0.0.0.0/0            0.0.0.0/0            /* istio/redirect-default-outbound */
+
+Chain ISTIO_REDIRECT (3 references)
+ pkts bytes target     prot opt in     out     source               destination
+   16   960 REDIRECT   tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            /* istio/redirect-to-envoy-port */ redir ports 15001
+```
+iptables -t nat -A PREROUTING -i eth0  -p tcp --dport 84 -j REDIRECT  --to-port 8888
+
+从pod的iptables规则中可以看到，
+pod的入口和出口流量分别通过PREROUTING和OUTPUT chain指向了自定义的ISTIO_REDIRECT chain，而ISTIO_REDIRECT chain中的规则将所有流量都重定向到了istio proxy的15001端口中。从而实现了对应用透明的通信代理。
+
 
 # 测试路由规则
 
@@ -353,6 +390,7 @@ kubectl apply -f istio-0.2.10/install/kubernetes/addons/grafana.yaml
 - [Istio官方文档](https://istio.io/docs/)
 - [Pattern: Service Mesh](http://philcalcado.com/2017/08/03/pattern_service_mesh.html)
 - [WHAT’S A SERVICE MESH? AND WHY DO I NEED ONE?](https://buoyant.io/2017/04/25/whats-a-service-mesh-and-why-do-i-need-one/)
+- [A Hacker’s Guide to Kubernetes Networking](https://thenewstack.io/hackers-guide-kubernetes-networking/)
 
 
 
