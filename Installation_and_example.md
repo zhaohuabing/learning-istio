@@ -30,7 +30,7 @@ _William Morgan _[_WHAT’S A SERVICE MESH? AND WHY DO I NEED ONE?_](https://buo
 
 Istio是微服务通讯和治理的基础设施层，本身并不负责服务的部署和集群管理，因此需要和Kubernetes等服务编排工具协同工作。
 
-Istio在架构设计上支持各种服务部署平台，包括kubernetes，cloud foundry，Mesos等，但Istio作为Google亲儿子，对自家兄弟Kubernetes的支持肯定是首先考虑的。目前版本的0.2版本的手册中也只有Kubernetes集成的安装说明，其它部署平台和Istio的集成将在后续版本中支持。  
+Istio在架构设计上支持各种服务部署平台，包括kubernetes，cloud foundry，Mesos等，但Istio作为Google亲儿子，对自家兄弟Kubernetes的支持肯定是首先考虑的。目前版本的0.2版本的手册中也只有Kubernetes集成的安装说明，其它部署平台和Istio的集成将在后续版本中支持。
 
 从Istio控制面Pilot的架构图可以看到各种部署平台可以通过插件方式集成到Istio中，为Istio提供服务注册和发现功能。
 
@@ -38,8 +38,8 @@ Istio在架构设计上支持各种服务部署平台，包括kubernetes，cloud
 
 kubernetes集群的部署较为复杂，[Rancher](http://rancher.com)提供了kubernetes部署模板，通过一键式安装，可以大大简化kubernetes集群的安装部署过程。
 
-本文的测试环境为两台虚机组成的集群，操作系统是Ubuntu 16.04.3 LTS。两台虚机的地址分别为：
-Rancher Server: 10.12.25.60
+本文的测试环境为两台虚机组成的集群，操作系统是Ubuntu 16.04.3 LTS。两台虚机的地址分别为：  
+Rancher Server: 10.12.25.60  
 工作节点: 10.12.25.116
 
 通过Rancher安装Kubernetes集群的简要步骤如下：
@@ -134,7 +134,7 @@ istio-mixer-1505455116-9hmcw     2/2       Running   0          2m
 istio-pilot-2278433625-68l34     1/1       Running   0          2m
 ```
 
-从上面的输出可以看到，这里部署的主要是Istio控制面的服务，而数据面的网络代理要如何部署呢？
+从上面的输出可以看到，这里部署的主要是Istio控制面的服务，而数据面的网络代理要如何部署呢？  
 根据前面服务网格的架构介绍可以得知，网络代理是随着应用程序以sidecar的方式部署的，在下面部署Bookinfo示例程序时会演示如何部署网络代理。
 
 # 部署Bookinfo示例程序
@@ -168,17 +168,25 @@ reviews       10.43.219.248   <none>        9080/TCP   6m
 ![](images/Bookinfo.PNG)
 
 # 理解Istio Proxy实现原理
-服务网格相对于sprint cloud等代码库的一大优势是其对应用程序无侵入，可以做到不修改应用程序代码的前提下对应用服务之间的通信进行接管，Istio是如何做到这点的呢？下面通过示例程序的部署剖析其中的原理。
 
-如果熟悉kubernetes的应用部署过程，我们知道kubernetes的标准部署方式是上面的部署过程可以看到，部署Bookinfo应用程序的命令和标准部署命令的唯一差别就是kubectl apply命令的输入不是一个kubernetes yaml文件，而是`istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml`命令的输出。
+服务网格相对于sprint cloud等代码库的一大优势是其对应用程序无侵入，在不修改应用程序代码的前提下对应用服务之间的通信进行接管，Istio是如何做到这点的呢？下面通过示例程序的部署剖析其中的原理。
 
-这段命令在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令到底做了什么事情。
+如果熟悉kubernetes的应用部署过程，我们知道Bookinfo应用程序应该这样部署
+
+```
+kubectl apply -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml
+```
+
+但从上面的部署过程可以看到，kubectl apply命令的输入不是一个kubernetes yaml文件，而是`istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml`命令的输出。
+
+这段命令在这里起到了什么作用呢？通过单独运行该命令并将输出保存到文件中，我们可以查看istioctl kube-inject命令到底在背后做了什么事情。
 
 ```
 istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> bookinfo_with_sidecar.yaml
 ```
 
-对比bookinfo\_with\_sidecar.yaml文件和bookinfo.yaml，可以看到该命令在bookinfo.yaml的基础上主要增加了下述修改：
+对比bookinfo\_with\_sidecar.yaml文件和bookinfo.yaml，可以看到该命令在bookinfo.yaml的基础上做了如下改动：
+
 * 为每个pod增加了一个代理container，该container用于处理应用container之间的通信，包括服务发现，路由规则处理等。从下面的配置文件中可以看到proxy container通过15001端口进行监听，接收应用container的流量。
 * 为每个pod增加了一个init-container，该container用于配置iptable，将应用container的流量导入到代理container中。
 
@@ -210,7 +218,7 @@ istioctl kube-inject -f istio-0.2.10/samples/bookinfo/kube/bookinfo.yaml >> book
         name: istio-init
 ```
 
-Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中，通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar一起部署，实现了Istio代理部署对应用部署透明性。
+从上面的分析，我们可以看出Istio的kube-inject工具的用途即是将代理sidecar注入了Bookinfo的kubernetes yaml部署文件中。通过该方式，不需要用户手动修改kubernetes的部署文件，即可在部署服务时将sidecar一起部署。
 
 我们可以通过命令查看pod中部署的docker container，确认是否部署了Istio代理
 
@@ -225,25 +233,28 @@ reviews-v1-1360980140-474x6       2/2       Running   0          1d
 reviews-v2-1193607610-cfhb5       2/2       Running   0          1d
 reviews-v3-3340858212-b5c8k       2/2       Running   0          1d
 ```
-查看reviews pod的中的container，可以看到除reviews container外还部署了一个istio-proxy container
-```
 
+查看reviews pod的中的container，可以看到除reviews container外还部署了一个istio-proxy container
+
+```
 kubectl get pod reviews-v3-3340858212-b5c8k -o jsonpath='{.spec.containers[*].name}'
 
 reviews istio-proxy
 ```
-istio-proxy打开了端口15001，pod中应用的流量通过iptables规则被重定向到15001端口中。
 
-我们首先通过命令行找到ratings-v1-233971408-8dcnp pod的PID，以用于查看其network namespace內的iptables规则。
+而应用container的流量是如何被导入到istio-proxy中的呢？ 
+
+原理是Istio proxy在端口15001进行监听，pod中应用container的流量通过iptables规则被重定向到15001端口中。下面我们进入pod内部，通过相关命令来验证这一点。
+
+先通过命令行找到ratings-v1-233971408-8dcnp pod的PID，以用于查看其network namespace內的iptables规则。
 
 ```
 CONTAINER_ID=$(kubectl get po ratings-v1-233971408-8dcnp -o jsonpath='{.status.containerStatuses[0].containerID}' | cut -c 10-21)
 
 PID=$(sudo docker inspect --format '{{ .State.Pid }}' $CONTAINER_ID)
-
 ```
 
-可以使用nsenter命令来进入pod的network namespace执行命令。
+可以使用nsenter命令来进入pod的network namespace执行命令。  
 使用netstat命令可以看到istio proxy代理的监听端口15001
 
 ```
@@ -253,6 +264,7 @@ tcp        0      0 *:15001                 *:*                     LISTEN
 ```
 
 使用iptables命令可以查看到下面的规则
+
 ```
 sudo nsenter -t ${PID} -n iptables -t nat -L -n -v
 
@@ -281,11 +293,8 @@ Chain ISTIO_REDIRECT (3 references)
  pkts bytes target     prot opt in     out     source               destination
    16   960 REDIRECT   tcp  --  *      *       0.0.0.0/0            0.0.0.0/0            /* istio/redirect-to-envoy-port */ redir ports 15001
 ```
-iptables -t nat -A PREROUTING -i eth0  -p tcp --dport 84 -j REDIRECT  --to-port 8888
 
-从pod的iptables规则中可以看到，
-pod的入口和出口流量分别通过PREROUTING和OUTPUT chain指向了自定义的ISTIO_REDIRECT chain，而ISTIO_REDIRECT chain中的规则将所有流量都重定向到了istio proxy的15001端口中。从而实现了对应用透明的通信代理。
-
+从pod所在network namespace的iptables规则中可以看到，pod的入口和出口流量分别通过PREROUTING和OUTPUT chain指向了自定义的ISTIO\_REDIRECT chain，而ISTIO\_REDIRECT chain中的规则将所有流量都重定向到了istio proxy正在监听的15001端口中。从而实现了对应用透明的通信代理。
 
 # 测试路由规则
 
@@ -325,9 +334,10 @@ istioctl delete -f route_rule.yaml -n default
 ```
 
 继续刷新productpage页面,将重新随机出现三个版本的评价内容页面。
-# 分布式调用追踪
-首先修改安装包中的 `istio-0.2.10/install/kubernetes/addons/zipkin.yaml` 部署文件，增加Nodeport,以便能在kubernetes集群外部访问zipkin界面。
 
+# 分布式调用追踪
+
+首先修改安装包中的 `istio-0.2.10/install/kubernetes/addons/zipkin.yaml` 部署文件，增加Nodeport,以便能在kubernetes集群外部访问zipkin界面。
 
 ```
 apiVersion: v1
@@ -346,16 +356,18 @@ spec:
 ```
 
 部署zipkin服务。
+
 ```
 kubectl apply -f istio-0.2.10/install/kubernetes/addons/zipkin.yaml
 ```
-在浏览器中打开zipkin页面，可以追踪一个端到端调用经过了哪些服务，以及各个服务花费的时间等详细信息，如下图所示：
+
+在浏览器中打开zipkin页面，可以追踪一个端到端调用经过了哪些服务，以及各个服务花费的时间等详细信息，如下图所示：  
 `http://10.12.25.116:30001`  
 ![](images/zipkin.PNG)
+
 # 性能指标监控
 
 首先修改安装包中的 `istio-0.2.10/install/kubernetes/addons/grafana.yaml` 部署文件，增加Nodeport,以便能在kubernetes集群外部访问grafana界面。
-
 
 ```
 apiVersion: v1
@@ -375,23 +387,24 @@ spec:
 ```
 
 prometheus用于收集和存储信息指标，grafana用于将性能指标信息进行可视化呈现，需要同时部署prometheus和grafana服务。
+
 ```
 kubectl apply -f istio-0.2.10/install/kubernetes/addons/prometheus.yaml
 
 kubectl apply -f istio-0.2.10/install/kubernetes/addons/grafana.yaml
 ```
+
 首先在浏览器中打开Bookinfo的页面`http://10.12.25.116/productpage`，刷新几次，以制造一些性能指标数据。
 
-然后打开grafana页面查看性能指标`http://10.12.25.116:30002/dashboard/db/istio-dashboard`，如下图所示：
+然后打开grafana页面查看性能指标`http://10.12.25.116:30002/dashboard/db/istio-dashboard`，如下图所示：  
 ![](images/grafana.PNG)
 
 # 参考
 
-- [Istio官方文档](https://istio.io/docs/)
-- [Pattern: Service Mesh](http://philcalcado.com/2017/08/03/pattern_service_mesh.html)
-- [WHAT’S A SERVICE MESH? AND WHY DO I NEED ONE?](https://buoyant.io/2017/04/25/whats-a-service-mesh-and-why-do-i-need-one/)
-- [A Hacker’s Guide to Kubernetes Networking](https://thenewstack.io/hackers-guide-kubernetes-networking/)
-
+* [Istio官方文档](https://istio.io/docs/)
+* [Pattern: Service Mesh](http://philcalcado.com/2017/08/03/pattern_service_mesh.html)
+* [WHAT’S A SERVICE MESH? AND WHY DO I NEED ONE?](https://buoyant.io/2017/04/25/whats-a-service-mesh-and-why-do-i-need-one/)
+* [A Hacker’s Guide to Kubernetes Networking](https://thenewstack.io/hackers-guide-kubernetes-networking/)
 
 
 
